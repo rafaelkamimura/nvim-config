@@ -1,5 +1,14 @@
 -- Comprehensive Testing Configuration for JavaScript/TypeScript
 -- Supports Jest, Vitest, Playwright with Neotest integration
+--
+-- Playwright Configuration:
+-- - Uses thenbe/neotest-playwright (correct repository)
+-- - Supports project selection and dynamic test discovery
+-- - Includes attachment functionality for traces and videos
+-- - Provides presets for debugging (headed, debug, none)
+--
+-- Alternative: For a simpler test runner, consider quicktest.nvim
+-- which also supports Playwright: require("quicktest.adapters.playwright")({})
 return {
   -- Neotest: Modern testing framework for Neovim
   {
@@ -12,7 +21,10 @@ return {
       -- JavaScript/TypeScript adapters
       "nvim-neotest/neotest-jest",
       "marilari88/neotest-vitest",
-      "nvim-neotest/neotest-playwright",
+      {
+        "thenbe/neotest-playwright",
+        dependencies = { "nvim-telescope/telescope.nvim" },
+      },
     },
     opts = {
       -- Configure adapters for different testing frameworks
@@ -84,13 +96,40 @@ return {
         },
         
         -- Playwright adapter configuration
-        ["neotest-playwright"] = {
+        require("neotest-playwright").adapter({
           options = {
             persist_project_selection = true,
             enable_dynamic_test_discovery = true,
             preset = "none", -- "none" | "headed" | "debug"
+            get_playwright_binary = function()
+              return vim.loop.cwd() .. "/node_modules/.bin/playwright"
+            end,
+            get_playwright_config = function()
+              local root = vim.fn.getcwd()
+              local possible_configs = {
+                "playwright.config.ts",
+                "playwright.config.js",
+                "playwright.config.mjs",
+              }
+              
+              for _, config in ipairs(possible_configs) do
+                if vim.fn.filereadable(root .. "/" .. config) == 1 then
+                  return root .. "/" .. config
+                end
+              end
+              
+              return vim.loop.cwd() .. "/playwright.config.ts"
+            end,
+            get_cwd = function()
+              return vim.loop.cwd()
+            end,
+            env = {},
+            extra_args = {},
+            filter_dir = function(name, rel_path, root)
+              return name ~= "node_modules"
+            end,
           },
-        },
+        }),
       },
       
       -- Global configuration
@@ -226,6 +265,10 @@ return {
         },
       }, neotest_ns)
       
+      -- Add playwright consumer for attachment functionality
+      opts.consumers = opts.consumers or {}
+      opts.consumers.playwright = require("neotest-playwright.consumers").consumers
+      
       require("neotest").setup(opts)
     end,
     
@@ -329,6 +372,29 @@ return {
           require("neotest").jump.prev({ status = "failed" })
         end,
         desc = "Previous failed test",
+      },
+      -- Playwright specific commands
+      {
+        "<leader>tp",
+        "<cmd>NeotestPlaywrightProject<cr>",
+        desc = "Select Playwright project",
+      },
+      {
+        "<leader>tP",
+        "<cmd>NeotestPlaywrightPreset<cr>",
+        desc = "Select Playwright preset",
+      },
+      {
+        "<leader>tT",
+        "<cmd>NeotestPlaywrightRefresh<cr>",
+        desc = "Refresh Playwright tests",
+      },
+      {
+        "<leader>tA",
+        function()
+          require("neotest").playwright.attachment()
+        end,
+        desc = "Launch test attachment",
       },
     },
   },
@@ -450,6 +516,36 @@ return {
       },
     },
   },
+
+  -- Alternative: quicktest.nvim for simpler test running
+  -- Uncomment to use instead of neotest for Playwright
+  --[[
+  {
+    "quolpr/quicktest.nvim",
+    dependencies = {
+      "nvim-lua/plenary.nvim",
+      "MunifTanjim/nui.nvim",
+    },
+    config = function()
+      local qt = require("quicktest")
+      qt.setup({
+        adapters = {
+          require("quicktest.adapters.vitest")({}),
+          require("quicktest.adapters.playwright")({}),
+        },
+        default_win_mode = "split",
+        use_builtin_colorizer = true,
+      })
+    end,
+    keys = {
+      { "<leader>qtl", function() require("quicktest").run_line() end, desc = "Test: Run line" },
+      { "<leader>qtf", function() require("quicktest").run_file() end, desc = "Test: Run file" },
+      { "<leader>qta", function() require("quicktest").run_all() end, desc = "Test: Run all" },
+      { "<leader>qtp", function() require("quicktest").run_previous() end, desc = "Test: Run previous" },
+      { "<leader>qtt", function() require("quicktest").toggle_win("split") end, desc = "Test: Toggle window" },
+    },
+  },
+  --]]
 
   -- Mason tool installer for testing tools
   {
