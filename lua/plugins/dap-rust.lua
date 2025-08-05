@@ -15,20 +15,46 @@ return {
     config = function()
       local dap = require("dap")
       
+      -- Get Mason registry to find installed tools
+      local mason_registry = require("mason-registry")
+      
       -- Configure codelldb adapter for Rust debugging
       dap.adapters.codelldb = {
         type = "server",
         port = "${port}",
         executable = {
-          command = vim.fn.exepath("codelldb") or "/opt/homebrew/bin/codelldb",
+          command = function()
+            -- First try to get codelldb from Mason
+            if mason_registry.is_installed("codelldb") then
+              return mason_registry.get_package("codelldb"):get_install_path() .. "/codelldb"
+            end
+            -- Fallback to system path or manual path
+            return vim.fn.exepath("codelldb") or vim.fn.expand("~/.local/share/nvim/mason/bin/codelldb")
+          end,
           args = { "--port", "${port}" },
         },
       }
       
-      -- Fallback to lldb if codelldb not available
+      -- Fallback to lldb if codelldb not available (removed invalid path)
       dap.adapters.lldb = {
         type = "executable",
-        command = "/opt/homebrew/bin/lldb-vscode", -- Adjust path as needed
+        command = function()
+          -- Try to find lldb-vscode in common locations
+          local possible_paths = {
+            vim.fn.exepath("lldb-vscode"),
+            "/usr/bin/lldb-vscode",
+            "/opt/homebrew/bin/lldb-vscode"
+          }
+          
+          for _, path in ipairs(possible_paths) do
+            if path and path ~= "" and vim.fn.executable(path) == 1 then
+              return path
+            end
+          end
+          
+          -- If not found, return a reasonable default and let it fail gracefully
+          return "lldb-vscode"
+        end,
         name = "lldb",
       }
       
